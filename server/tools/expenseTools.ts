@@ -5,6 +5,65 @@ import { isBetween } from '../utils/date-helpers';
 import { detectAnomalies } from '../utils/anomaly-helper';
 import * as math from '../utils/math-helpers';
 
+// Shared filter parameters schema
+const filterParamsSchema = {
+    startDate: z.string().optional().describe('Filter by start date (YYYY-MM-DD)'),
+    endDate: z.string().optional().describe('Filter by end date (YYYY-MM-DD)'),
+    category: z.string().optional().describe('Filter by category'),
+    minAmount: z.number().optional().describe('Minimum amount'),
+    maxAmount: z.number().optional().describe('Maximum amount'),
+    merchant: z.string().optional().describe('Filter by merchant name'),
+    excludeOutliers: z.boolean().optional().describe('Whether to exclude statistical outliers'),
+};
+
+interface FilterParams {
+    startDate?: string;
+    endDate?: string;
+    category?: string;
+    minAmount?: number;
+    maxAmount?: number;
+    merchant?: string;
+    excludeOutliers?: boolean;
+}
+
+/**
+ * Filters expenses based on provided criteria
+ */
+function filterExpenses(expenses: Expense[], params: FilterParams): Expense[] {
+    let filtered = expenses;
+
+    if (params.category) {
+        filtered = filtered.filter(e => e.category?.toLowerCase() === params.category!.toLowerCase());
+    }
+    if (params.startDate || params.endDate) {
+        filtered = filtered.filter(e => isBetween(e.date, params.startDate, params.endDate));
+    }
+    if (params.minAmount !== undefined) {
+        filtered = filtered.filter(e => e.amount >= params.minAmount!);
+    }
+    if (params.maxAmount !== undefined) {
+        filtered = filtered.filter(e => e.amount <= params.maxAmount!);
+    }
+    if (params.merchant) {
+        filtered = filtered.filter(e => e.vendor.toLowerCase().includes(params.merchant!.toLowerCase()));
+    }
+
+    if (params.excludeOutliers) {
+        filtered = removeOutliers(filtered);
+    }
+
+    return filtered;
+}
+
+/**
+ * Removes statistical outliers from expense list
+ */
+function removeOutliers(expenses: Expense[]): Expense[] {
+    const outliers = detectAnomalies(expenses, 2);
+    const outlierKeys = new Set(outliers.map(o => `${o.date}-${o.amount}-${o.vendor}`));
+    return expenses.filter(e => !outlierKeys.has(`${e.date}-${e.amount}-${e.vendor}`));
+}
+
 export const createTools = (expenses: Expense[]) => ({
     get_categories: tool({
         description: 'Get all unique expense categories',
@@ -17,91 +76,20 @@ export const createTools = (expenses: Expense[]) => ({
 
     list_expenses: tool({
         description: 'Filter and list expenses',
-        execute: async ({
-            startDate,
-            endDate,
-            category,
-            minAmount,
-            maxAmount,
-            merchant,
-            excludeOutliers
-        }) => {
-            let filtered = expenses;
-
-            if (category) {
-                filtered = filtered.filter(e => e.category?.toLowerCase() === category.toLowerCase());
-            }
-            if (startDate || endDate) {
-                filtered = filtered.filter(e => isBetween(e.date, startDate, endDate));
-            }
-            if (minAmount !== undefined) {
-                filtered = filtered.filter(e => e.amount >= minAmount);
-            }
-            if (maxAmount !== undefined) {
-                filtered = filtered.filter(e => e.amount <= maxAmount);
-            }
-            if (merchant) {
-                filtered = filtered.filter(e => e.vendor.toLowerCase().includes(merchant.toLowerCase()));
-            }
-
-            if (excludeOutliers) {
-                const outliers = detectAnomalies(filtered, 2);
-                const outlierKeys = new Set(outliers.map(o => `${o.date}-${o.amount}-${o.vendor}`));
-                filtered = filtered.filter(e => !outlierKeys.has(`${e.date}-${e.amount}-${e.vendor}`));
-            }
-
+        execute: async (params) => {
+            const filtered = filterExpenses(expenses, params);
             return {
                 count: filtered.length,
                 expenses: filtered
             };
         },
-        inputSchema: z.object({
-            startDate: z.string().optional().describe('Filter by start date (YYYY-MM-DD)'),
-            endDate: z.string().optional().describe('Filter by end date (YYYY-MM-DD)'),
-            category: z.string().optional().describe('Filter by category'),
-            minAmount: z.number().optional().describe('Minimum amount'),
-            maxAmount: z.number().optional().describe('Maximum amount'),
-            merchant: z.string().optional().describe('Filter by merchant name'),
-            excludeOutliers: z.boolean().optional().describe('Whether to exclude statistical outliers'),
-        }),
+        inputSchema: z.object(filterParamsSchema),
     }),
 
     get_spending_stats: tool({
         description: 'Calculate detailed spending statistics with optional filtering and outlier exclusion',
-        execute: async ({
-            metric,
-            startDate,
-            endDate,
-            category,
-            minAmount,
-            maxAmount,
-            merchant,
-            excludeOutliers
-        }) => {
-            let filtered = expenses;
-
-            if (category) {
-                filtered = filtered.filter(e => e.category?.toLowerCase() === category.toLowerCase());
-            }
-            if (startDate || endDate) {
-                filtered = filtered.filter(e => isBetween(e.date, startDate, endDate));
-            }
-            if (minAmount !== undefined) {
-                filtered = filtered.filter(e => e.amount >= minAmount);
-            }
-            if (maxAmount !== undefined) {
-                filtered = filtered.filter(e => e.amount <= maxAmount);
-            }
-            if (merchant) {
-                filtered = filtered.filter(e => e.vendor.toLowerCase().includes(merchant.toLowerCase()));
-            }
-
-            if (excludeOutliers) {
-                const outliers = detectAnomalies(filtered, 2);
-                const outlierKeys = new Set(outliers.map(o => `${o.date}-${o.amount}-${o.vendor}`));
-                filtered = filtered.filter(e => !outlierKeys.has(`${e.date}-${e.amount}-${e.vendor}`));
-            }
-
+        execute: async ({ metric, ...filterParams }) => {
+            const filtered = filterExpenses(expenses, filterParams);
             const amounts = filtered.map(e => e.amount);
 
             if (metric === 'count') return { value: filtered.length };
@@ -125,52 +113,14 @@ export const createTools = (expenses: Expense[]) => ({
         },
         inputSchema: z.object({
             metric: z.enum(['total', 'average', 'median', 'min', 'max', 'count']).describe('The statistical metric to calculate'),
-            startDate: z.string().optional().describe('Filter by start date (YYYY-MM-DD)'),
-            endDate: z.string().optional().describe('Filter by end date (YYYY-MM-DD)'),
-            category: z.string().optional().describe('Filter by category'),
-            minAmount: z.number().optional().describe('Minimum amount'),
-            maxAmount: z.number().optional().describe('Maximum amount'),
-            merchant: z.string().optional().describe('Filter by merchant name'),
-            excludeOutliers: z.boolean().optional().describe('Whether to exclude statistical outliers'),
+            ...filterParamsSchema,
         }),
     }),
 
     get_spending_analysis: tool({
         description: 'Group expenses and calculate totals/counts (e.g., spending by category, monthly breakdown)',
-        execute: async ({
-            groupBy,
-            startDate,
-            endDate,
-            category,
-            minAmount,
-            maxAmount,
-            merchant,
-            excludeOutliers
-        }) => {
-            let filtered = expenses;
-
-            if (category) {
-                filtered = filtered.filter(e => e.category?.toLowerCase() === category.toLowerCase());
-            }
-            if (startDate || endDate) {
-                filtered = filtered.filter(e => isBetween(e.date, startDate, endDate));
-            }
-            if (minAmount !== undefined) {
-                filtered = filtered.filter(e => e.amount >= minAmount);
-            }
-            if (maxAmount !== undefined) {
-                filtered = filtered.filter(e => e.amount <= maxAmount);
-            }
-            if (merchant) {
-                filtered = filtered.filter(e => e.vendor.toLowerCase().includes(merchant.toLowerCase()));
-            }
-
-            if (excludeOutliers) {
-                const outliers = detectAnomalies(filtered, 2);
-                const outlierKeys = new Set(outliers.map(o => `${o.date}-${o.amount}-${o.vendor}`));
-                filtered = filtered.filter(e => !outlierKeys.has(`${e.date}-${e.amount}-${e.vendor}`));
-            }
-
+        execute: async ({ groupBy, ...filterParams }) => {
+            const filtered = filterExpenses(expenses, filterParams);
             const groups: Record<string, { total: number, count: number }> = {};
 
             filtered.forEach(e => {
@@ -197,13 +147,7 @@ export const createTools = (expenses: Expense[]) => ({
         },
         inputSchema: z.object({
             groupBy: z.enum(['category', 'month', 'vendor']).describe('Criteria to group expenses by'),
-            startDate: z.string().optional().describe('Filter by start date (YYYY-MM-DD)'),
-            endDate: z.string().optional().describe('Filter by end date (YYYY-MM-DD)'),
-            category: z.string().optional().describe('Filter by category'),
-            minAmount: z.number().optional().describe('Minimum amount'),
-            maxAmount: z.number().optional().describe('Maximum amount'),
-            merchant: z.string().optional().describe('Filter by merchant name'),
-            excludeOutliers: z.boolean().optional().describe('Whether to exclude statistical outliers'),
+            ...filterParamsSchema,
         }),
     }),
 });
