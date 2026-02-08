@@ -7,6 +7,8 @@ export class FinanceAgent {
   private messages: CoreMessage[] = [];
   private tools: ReturnType<typeof createTools>;
 
+  private queryCache: Map<string, string> = new Map();
+
   constructor(expenses: Expense[]) {
     this.tools = createTools(expenses);
 
@@ -20,6 +22,7 @@ Today's date is December 30, 2025.
 - Help users analyze spending with extreme precision and stunning presentation.
 - ALWAYS use tools for data. Hallucinations are strictly forbidden.
 - Context: Today is December 30, 2025. Use this for all relative date logic.
+- **Action over words**: If a user asks a question that can be answered with a tool, call the tool IMMEDIATELY. Do not ask for clarification on dates if "this month" or "last month" are mentioned; use the current context (Dec 2025).
 
 ### Presentation Style (Very Important)
 - **Rich Visuals**: Use category-specific emojis (🛒 Groceries, 🍽️ Dining, 🏥 Health, 🛍️ Shopping, 🎭 Entertainment, 🔌 Utilities, 🚗 Transportation, 📱 Subscriptions, 💰 Other).
@@ -34,12 +37,27 @@ Today's date is December 30, 2025.
     3. A brief "Total" or "Insight" at the end.
 
 ### Logic
-- If asked for "outliers" or "anomalies", use 'excludeOutliers: true'.
-- Remember conversational context. "What about last month?" refers to the same filters as the previous query unless specified otherwise.`
+- **Period Logic**: "This month" is Dec 2025. "Last month" is Nov 2025. ALWAYS use 'startDate' and 'endDate' in tool calls for these periods.
+- **Goal-Oriented**: If the user asks for data (list, average, total), call the appropriate tool IMMEDIATELY. Do not talk before calling tools.
+- **Strict Filter Enforcement**: You MUST include ALL numeric constraints from the user query (e.g., "over $100", "min $50") as tool parameters ('minAmount', 'maxAmount'). Never ignore these filters. If a tool call with specific filters returns 0 items, report that no items matched those specific filters.
+- **Example**: "Groceries over $100 last month" -> tool call should use "minAmount: 100", "startDate: '2025-11-01'", "endDate: '2025-11-30'", "category: 'groceries'".
+- **Small Data Sets**: If a tool returns only 1 item, report its value as the median/average.
+`
     });
   }
 
   async run(query: string): Promise<string> {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    // Check cache first
+    if (this.queryCache.has(normalizedQuery)) {
+      const cachedResponse = this.queryCache.get(normalizedQuery)!;
+      // Add to history so context is maintained even if cached
+      this.messages.push({ role: 'user', content: query });
+      this.messages.push({ role: 'assistant', content: cachedResponse });
+      return cachedResponse;
+    }
+
     // Add user query to history
     this.messages.push({ role: 'user', content: query });
 
@@ -51,10 +69,29 @@ Today's date is December 30, 2025.
         stopWhen: stepCountIs(10), // Allow for multi-step reasoning and multiple tool calls
       });
 
-      // Add assistant response to history to maintain context
-      this.messages.push({ role: 'assistant', content: result.text });
+      const responseText = result.text;
 
-      return result.text;
+      // Add assistant response to history to maintain context
+      this.messages.push({ role: 'assistant', content: responseText });
+
+      // Update Cache
+      this.queryCache.set(normalizedQuery, responseText);
+      // Limit cache size to prevent memory leaks (keep last 50 queries)
+      if (this.queryCache.size > 50) {
+        const firstKey = this.queryCache.keys().next().value;
+        if (firstKey) {
+          this.queryCache.delete(firstKey);
+        }
+      }
+
+      // Context Window Management: Keep System Prompt + last 10 interactions
+      if (this.messages.length > 11) {
+        const systemPrompt = this.messages[0];
+        const recentHistory = this.messages.slice(-10);
+        this.messages = [systemPrompt, ...recentHistory];
+      }
+
+      return responseText;
     } catch (error) {
       console.error('Error in FinanceAgent.run:', error);
       return "I'm sorry, I encountered an error while processing your request. Please try again.";
