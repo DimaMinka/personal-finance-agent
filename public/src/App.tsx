@@ -101,7 +101,7 @@ function App() {
 
       <Container size={'80%'} style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0, height: '100%' }}>
         <Flex direction="column" style={{ height: '100%' }} justify={'end'}>
-          <Flex direction="column" style={{ overflow: 'auto' }} >
+          <Flex direction="column" style={{ flex: 1, overflow: 'hidden' }} >
             <ChatContainer messages={messages} />
           </Flex>
 

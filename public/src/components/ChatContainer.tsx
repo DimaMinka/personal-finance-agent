@@ -27,7 +27,7 @@ export default function ChatContainer({ messages }: ChatContainerProps) {
   return (
     <ScrollArea
       viewportRef={viewport}
-      style={{ flex: 1, height: 0 }}
+      style={{ flex: 1, height: '100%' }}
       type="auto"
     >
       {messages.map((message, index) => (

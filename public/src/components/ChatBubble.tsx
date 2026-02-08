@@ -1,4 +1,4 @@
-import { Box, Text, useMantineColorScheme } from '@mantine/core';
+import { Box, useMantineColorScheme } from '@mantine/core';
 
 interface ChatBubbleProps {
   role: 'user' | 'assistant';
@@ -32,14 +32,15 @@ export default function ChatBubble({ role, content }: ChatBubbleProps) {
               : 'var(--mantine-color-gray-1)',
         }}
       >
-        <Text
-          size="sm"
+        <Box
           style={{
+            fontSize: 'var(--mantine-font-size-sm)',
+            lineHeight: 'var(--mantine-line-height-sm)',
             color: isUser ? 'white' : isDark ? 'var(--mantine-color-gray-3)' : 'var(--mantine-color-gray-9)',
+            wordBreak: 'break-word'
           }}
-        >
-          <div dangerouslySetInnerHTML={{ __html: content }} />
-        </Text>
+          dangerouslySetInnerHTML={{ __html: content }}
+        />
       </Box>
     </Box>
   );
