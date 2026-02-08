@@ -79,9 +79,9 @@ We had a problem where messages didn't show in Safari.
 We created `scripts/verify_agent.ts` to automatically test the agent.
 
 It asks specific questions and checks if the answers are correct:
-- Groceries last month → Should be $288.75
-- Average dining → Should be $161.16
-- Median dining (no outliers) → Should be $81.16
+- Groceries last month → Should be **$288.75** (Total)
+- Average dining → Should be **$161.16**
+- Median dining (no outliers) → Should be **$81.16**
 
 This helps us make sure everything works correctly.
 
