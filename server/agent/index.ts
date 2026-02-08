@@ -7,6 +7,8 @@ export class FinanceAgent {
   private messages: CoreMessage[] = [];
   private tools: ReturnType<typeof createTools>;
 
+  private queryCache: Map<string, string> = new Map();
+
   constructor(expenses: Expense[]) {
     this.tools = createTools(expenses);
 
@@ -45,6 +47,17 @@ Today's date is December 30, 2025.
   }
 
   async run(query: string): Promise<string> {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    // Check cache first
+    if (this.queryCache.has(normalizedQuery)) {
+      const cachedResponse = this.queryCache.get(normalizedQuery)!;
+      // Add to history so context is maintained even if cached
+      this.messages.push({ role: 'user', content: query });
+      this.messages.push({ role: 'assistant', content: cachedResponse });
+      return cachedResponse;
+    }
+
     // Add user query to history
     this.messages.push({ role: 'user', content: query });
 
@@ -56,8 +69,20 @@ Today's date is December 30, 2025.
         stopWhen: stepCountIs(10), // Allow for multi-step reasoning and multiple tool calls
       });
 
+      const responseText = result.text;
+
       // Add assistant response to history to maintain context
-      this.messages.push({ role: 'assistant', content: result.text });
+      this.messages.push({ role: 'assistant', content: responseText });
+
+      // Update Cache
+      this.queryCache.set(normalizedQuery, responseText);
+      // Limit cache size to prevent memory leaks (keep last 50 queries)
+      if (this.queryCache.size > 50) {
+        const firstKey = this.queryCache.keys().next().value;
+        if (firstKey) {
+          this.queryCache.delete(firstKey);
+        }
+      }
 
       // Context Window Management: Keep System Prompt + last 10 interactions
       if (this.messages.length > 11) {
@@ -66,7 +91,7 @@ Today's date is December 30, 2025.
         this.messages = [systemPrompt, ...recentHistory];
       }
 
-      return result.text;
+      return responseText;
     } catch (error) {
       console.error('Error in FinanceAgent.run:', error);
       return "I'm sorry, I encountered an error while processing your request. Please try again.";

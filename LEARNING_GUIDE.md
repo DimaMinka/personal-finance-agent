@@ -55,6 +55,14 @@ Sometimes you have unusual expenses (like buying a laptop for $1200 when you usu
 
 We added an `excludeOutliers` option that removes these unusual items so they don't mess up your averages.
 
+### 4. Smart Caching (New!)
+If you ask the same question twice, the AI shouldn't think twice.
+
+We added a **cache** that remembers recent questions and answers.
+- **First time:** AI thinks hard, calls tools, generates response.
+- **Second time:** AI instantly returns the previous answer.
+- **Benefit:** Saves money (fewer API calls) and makes the app faster!
+
 ---
 
 ## 🎨 Making It Look Good
